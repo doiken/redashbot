@@ -1,34 +1,16 @@
-import { AllMiddlewareArgs, SlackEventMiddlewareArgs } from '@slack/bolt'
+import { Context, Middleware as M, SlackEventMiddlewareArgs } from '@slack/bolt'
+import { Redash } from './redash'
 import Table from 'table-layout'
 import { Browser } from './browser'
-import { Redash } from './redash'
+import { WebClient } from '@slack/web-api'
 
-type Middleware = (
-  args: AllMiddlewareArgs & {
-    message: Pick<SlackEventMiddlewareArgs<'message'>['message'], 'channel'>
-  },
-) => Promise<void>
+type Middleware = (args: {
+  context: Context
+  client: WebClient
+  message: { channel: string }
+}) => Promise<void>
 
 export type Handler = (ctx: { redash: Redash; browser: Browser }) => Middleware
-export type CommandOptions = { width: number; height: number }
-
-function prepareOptions(input: string): CommandOptions {
-  const regex = /rb_(\w+)=([\w\d]+)/g
-
-  const args = {}
-  let match
-  while ((match = regex.exec(input)) !== null) {
-    const [_, key, value] = match
-    args[key] = value
-  }
-
-  const options: CommandOptions = {
-    width: parseInt(args['width']) || 1024,
-    height: parseInt(args['height']) || 360,
-  }
-
-  return options
-}
 
 export const handleRecordChart: Handler = ({ redash, browser }) => {
   return async ({ context, client, message }) => {
@@ -39,15 +21,16 @@ export const handleRecordChart: Handler = ({ redash, browser }) => {
     })
 
     const query = await redash.getQuery(queryId)
-    const visualization = query.visualizations.find((vis) => vis.id.toString() === visualizationId)
+    const visualization = query.visualizations.find(
+      (vis) => vis.id.toString() === visualizationId
+    )
 
     const embedUrl = `${redash.alias}/embed/query/${queryId}/visualization/${visualizationId}?api_key=${redash.apiKey}`
     const filename = `${query.name}-${visualization?.name}-query-${queryId}-visualization-${visualizationId}.png`
 
-    const options = prepareOptions(context.matches.input)
-    const file = await browser.capture(embedUrl, options.width, options.height)
+    const file = await browser.capture(embedUrl)
     client.files.uploadV2({
-      channel_id: message.channel,
+      channels: message.channel,
       filename,
       file,
     })
@@ -64,10 +47,9 @@ export const handleRecordDashboardLegacy: Handler = ({ redash, browser }) => {
 
     const dashboard = await redash.getDashboardLegacy(dashboardSlug)
     const filename = `${dashboard.name}-dashboard-${dashboardSlug}.png`
-    const options = prepareOptions(context.matches.input)
-    const file = await browser.capture(dashboard.public_url, options.width, options.height)
+    const file = await browser.capture(dashboard.public_url)
     client.files.uploadV2({
-      channel_id: message.channel,
+      channels: message.channel,
       filename,
       file,
     })
@@ -84,11 +66,12 @@ export const handleRecordDashboard: Handler = ({ redash, browser }) => {
 
     const dashboard = await redash.getDashboard(dashboardId)
     const filename = `${dashboard.name}-dashboard-${dashboardId}-${dashboardSlug}.png`
+    console.log("hoge")
+    console.log(dashboard)
     if (dashboard.public_url) {
-      const options = prepareOptions(context.matches.input)
-      const file = await browser.capture(dashboard.public_url, options.width, options.height)
+      const file = await browser.capture(dashboard.public_url)
       client.files.uploadV2({
-        channel_id: message.channel,
+        channels: message.channel,
         filename,
         file,
       })
